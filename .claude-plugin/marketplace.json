@@ -1,0 +1,7 @@
+{
+  "name": "gitnexus-tools",
+  "owner": { "name": "Nguyen Hong" },
+  "plugins": [
+    { "name": "gitnexus-pr-review", "source": "./" }
+  ]
+}
