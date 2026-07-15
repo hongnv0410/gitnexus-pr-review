@@ -86,7 +86,7 @@ Correctness *(Rec)* · Regression *(Rec)* · Coupling · Performance · Security
 
 **Q3. Validate CHÍNH thiết kế?** — Có: đối chiếu doc↔code + phản biện thiết kế *(Rec nếu chạm kiến trúc/backend)* · Không: chỉ dùng thiết kế làm chuẩn.
 
-**Q4. Độ sâu + Đầu ra** — Sâu: Vừa *(Rec)*/Nhanh/Sâu · Ra *(multiSelect)*: Báo cáo 3 tầng + blast radius *(Rec)* · Tóm tắt · Chi tiết+trace · Xuất `.md` · **Comment PR** (tóm tắt Đã đạt / Chưa đạt / Đề xuất — dán lên PR, cần user duyệt nháp trước).
+**Q4. Độ sâu + Đầu ra** — Độ sâu *(quyết định ĐỌC CODE tới đâu — xem bảng đầu Bước 2)*: **Nhanh** (chỉ GitNexus, dừng ở kiến trúc) · **Vừa** *(Rec)* (đọc hunk điểm nóng) · **Sâu** (đọc delta dòng-by-dòng) · Ra *(multiSelect)*: Báo cáo 3 tầng + blast radius *(Rec)* · Tóm tắt · Chi tiết+trace · Xuất `.md` · **Comment PR** (tóm tắt Đã đạt / Chưa đạt / Đề xuất — dán lên PR, cần user duyệt nháp trước).
 
 > Base mặc định `main`; ngưỡng cảnh báo **HIGH**. Đọc quy ước/thiết kế "chuẩn" từ **`main`**, không từ nhánh PR.
 
@@ -128,6 +128,21 @@ sequenceDiagram
 
 ## Bước 2 — Chạy review theo 3 tầng
 
+### Nguyên tắc nguồn: GitNexus-first, đọc delta theo ĐỘ SÂU
+
+Nút "Độ sâu" (Q4) điều khiển **đọc dòng code tới đâu** — kiến trúc thì GitNexus đủ, sâu mới lặn vào delta.
+GitNexus luôn là nguồn *điều hướng/đồ thị*; đọc code chỉ để *xác nhận đúng/sai trên dòng đã đổi*.
+
+| Độ sâu | Mục tiêu | Nguồn | Đọc dòng code (delta)? |
+|---|---|---|---|
+| **Nhanh / Kiến trúc** | Ăn khớp kiến trúc · tầng · data-flow · blast radius | CHỈ GitNexus: `detect_changes` · `clusters` · `processes` · `impact` · `context` (metadata) · `cypher` | ❌ Không đọc hunk. Chạy 2A đầy đủ, 2B ở mức flow-metadata, **BỎ** 2C correctness |
+| **Vừa** *(mặc định)* | + thiết kế module · trùng lặp · correctness điểm nóng | GitNexus-first, rồi xem code **chỉ ở symbol nghi ngờ (MED+)** | ⚠️ Chỉ hunk được flag: `context(include_content)` → `git diff` hunk. KHÔNG cả file |
+| **Sâu** | + correctness/leak/perf **dòng-by-dòng** | GitNexus điều hướng + đọc **delta đầy đủ** mọi symbol bị đụng | ✅ Đọc sâu delta các symbol trong worklist |
+
+**Quy tắc cứng (mọi mức):** worklist = symbol/flow do `detect_changes` trả về. **KHÔNG mở file GitNexus không
+flag, KHÔNG đọc toàn file.** Muốn xem code → `context({name, include_content:true})` (truy vấn index) TRƯỚC,
+rồi `git diff <base>..HEAD -- <file>` đúng **hunk** SAU — `git diff` chỉ để thấy *delta*, không phải đọc cả file.
+
 ### Chế độ chạy: Solo (mặc định) vs Swarm (song song)
 
 - **Solo** *(mặc định, diff nhỏ/vừa)*: một mình chạy tuần tự 2A → 2B → 2C. Đơn giản, ít token.
@@ -154,7 +169,7 @@ Swarm — sơ đồ giao việc (dùng Agent tool, chạy song song ở tầng g
 - **Lane 7 không được bỏ**: chưa qua synthesis-critic thì CHƯA xuất báo cáo. Nó là nơi dedup + chốt verdict.
 - Solo mode vẫn làm đúng các việc của từng lane, chỉ khác là tuần tự trong 1 context.
 
-### 2A · Tầng 1 — Kiến trúc tổng thể + validate thiết kế
+### 2A · Tầng 1 — Kiến trúc tổng thể + validate thiết kế  *(chạy ở MỌI độ sâu — chỉ GitNexus, không đọc hunk)*
 ```
 1. Nạp "chuẩn kiến trúc" (từ base branch `main`, không từ nhánh PR):
    - Đọc doc kiến trúc của dự án (vd: docs/*, ADR/*, CLAUDE.md/AGENTS.md) — tự dò thư mục docs thực tế.
@@ -166,7 +181,8 @@ Swarm — sơ đồ giao việc (dùng Agent tool, chạy song song ở tầng g
        output clusters/processes + doc để phản biện dựa trên pattern chuẩn ngành.
 3. ĐỐI CHIẾU diff với kiến trúc:
    - Symbol/file đổi rơi vào cluster nào? File/module MỚI không thuộc cluster nào → nghi lệch tầng.
-   - Import/gọi VƯỢT TẦNG không (vd: UI gọi thẳng transport, tầng cao thò vào nội bộ tầng thấp)? grep import.
+   - Import/gọi VƯỢT TẦNG không (UI gọi thẳng transport, tầng cao thò vào nội bộ tầng thấp)? Lần bằng
+     `context({name})` (`incoming/outgoing.calls`) hoặc `cypher` cạnh phụ thuộc — `grep import` chỉ để XÁC NHẬN.
    - Sinh "module/luồng song song" trùng chức năng tầng đã có không (→ 2C).
    → Verdict tầng 1: ĂN KHỚP / LỆCH (+ điểm lệch cụ thể).
 ```
@@ -176,23 +192,26 @@ Swarm — sơ đồ giao việc (dùng Agent tool, chạy song song ở tầng g
 1. detect_changes({scope:"compare", base_ref, repo}) → symbol đổi + flow bị đụng (TÁCH docs khỏi code).
    Output lớn → giao subagent đọc file kết quả, giữ context chính gọn.
 2. Component (lens Frontend): thành phần MỚI theo pattern anh em không (props/handler/command wiring,
-   tách file, đặt tên)? Đọc 1–2 thành phần cùng loại đã có để so. Contract giữa các tầng (vd: caller
-   dùng API/command nào thì phía cung cấp phải đăng ký/expose) — grep xác nhận TỪNG cái.
+   tách file, đặt tên)? Lấy thành phần cùng loại qua `context`/`cypher` (index) để so pattern; `grep` chỉ
+   XÁC NHẬN contract giữa tầng (caller dùng API/command nào thì phía cung cấp phải đăng ký/expose).
+   *[Nhanh: chỉ đối chiếu metadata. Vừa/Sâu: mới `context(include_content)` đọc thân component mới.]*
 3. Data flow (lens Backend): READ gitnexus://repo/<repo>/process/{tên} cho flow bị đụng → bước nào đi
    qua symbol đã đổi; luồng đúng thứ tự/tầng? state reset đúng ở ranh giới (khởi tạo lại, teardown,
-   đổi ngữ cảnh/phiên)? Đọc cả hàm/class bao ngoài hunk (dynamic context), soi state TRƯỚC đổi.
+   đổi ngữ cảnh/phiên)?
+   *[Nhanh: chỉ đọc process metadata, KHÔNG mở hunk. Vừa: đọc hàm/class bao ngoài hunk MED+ (dynamic
+   context qua `context(include_content)`), soi state TRƯỚC đổi. Sâu: full delta mọi symbol trong flow.]*
 4. Database (nếu có): schema/migration/index/transaction vs data flow. KHÔNG có → skip, ghi rõ.
 ```
 
-### 2C · Tầng 3 — Low-level: correctness + TRÙNG LẶP + leak/perf
+### 2C · Tầng 3 — Low-level: correctness + TRÙNG LẶP + leak/perf  *(bước 2–3 chỉ ở Vừa/Sâu — cần delta; Nhanh BỎ)*
 ```
-1. TRÙNG LẶP / THỪA (làm TRƯỚC khi khen "hàm mới hợp lý"):
+1. TRÙNG LẶP / THỪA — chạy ở MỌI độ sâu (dùng index, không cần đọc dòng):
    - Mỗi hàm/util MỚI: query({search_query:"<chức năng>"}) + context({name:"<tên gần giống>"})
-     + grep signature → đã có hàm làm việc này chưa? Có → đề xuất tái dùng, không viết mới.
-   - cypher tìm hàm cùng shape nếu cần.
-2. Correctness: null/undefined deref, nhánh sai, off-by-one, race, missed await, state không reset.
-3. Leak/perf: listener/timer/disposer dọn trong dispose()/teardown? throttle/debounce đúng? round-trip
-   thừa? đường nóng (hot path) chậm thêm?
+     + cypher tìm hàm cùng shape → đã có hàm làm việc này chưa? Có → đề xuất tái dùng. `grep` chỉ xác nhận.
+2. Correctness *(Vừa/Sâu)*: null/undefined deref, nhánh sai, off-by-one, race, missed await, state không reset.
+   → đọc code qua `context(include_content)` rồi `git diff` hunk. *[Vừa: chỉ symbol MED+; Sâu: mọi symbol đụng.]*
+3. Leak/perf *(Vừa/Sâu)*: listener/timer/disposer dọn trong dispose()/teardown? throttle/debounce đúng?
+   round-trip thừa? đường nóng (hot path) chậm thêm? (đọc delta như bước 2)
 4. Symbol trọng tâm: impact({target, direction:"upstream", repo}) → blast radius. upstream=0 phải đối chiếu.
 5. Security taint (nếu chọn & có PDG): explain({target, repo}) → source→sink.
 ```
@@ -327,6 +346,7 @@ KHÔNG dán cả báo cáo dài lên PR. Nội dung lấy từ synthesis-gate đ
 - [ ] Bước 0: status(stale?) · list_repos đúng path · PDG? · DB? · PR/ticket? · merge-state+CI(gh pr checks) · branch hygiene · phạm vi
 - [ ] hỏi user (≤4 câu, bỏ câu tự biết) — validate thiết kế không (Q3)
 - [ ] Describe: PR type + walkthrough + **2 sơ đồ mermaid BẮT BUỘC** (kiến trúc-vùng-đụng + luồng chính) khi PR lớn/mixed
+- [ ] chốt ĐỘ SÂU → đọc code tới đâu: Nhanh=chỉ GitNexus (không hunk) · Vừa=hunk MED+ · Sâu=full delta. KHÔNG mở file ngoài worklist, KHÔNG đọc toàn file
 - [ ] chọn chế độ: Solo (mặc định) / Swarm (diff lớn → fan-out subagent + Lane 7 gate; nhắc READ-ONLY từng subagent)
 - [ ] TẦNG 1: doc(main) + clusters + processes → đối chiếu diff → verdict ĂN KHỚP/LỆCH; validate thiết kế nếu Q3
 - [ ] TẦNG 2: detect_changes(tách docs) · component theo pattern? · process cho flow bị đụng · dynamic context
