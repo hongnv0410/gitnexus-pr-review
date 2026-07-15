@@ -53,7 +53,9 @@ Nguồn: **pr-agent** *(pa)* · **pr-swarm-review** *(ps)* — link ở đoạn 
   (Khôi phục alias: `node .gitnexus/run.cjs analyze --name <repo>`.)
 - **`impact(direction:"upstream")` có thể BÁO THIẾU** (chỉ đi cạnh Function/Method). `upstream=0` KHÔNG =
   an toàn — đối chiếu `context({name})` (`incoming.calls`) hoặc `grep` trước khi kết luận LOW.
-- **FTS/embeddings có thể không nạp được** → nếu vậy `query` full-text kém chính xác; ưu tiên `context`/`impact`/`grep`/`cypher`.
+- **`query` CHẠY ĐƯỢC (BM25 + vector; đã kiểm trên index này)** → dùng làm **nguồn chính** tìm symbol/trùng lặp
+  theo khái niệm. Cảnh báo duy nhất: nó có thể trả `processes` rỗng (chỉ ra `definitions`) → muốn hiểu LUỒNG thì
+  dùng `processes`/`context`, đừng bắt `query` làm việc đó.
 
 ## Bước 0 — Tự kiểm tiền đề (KHÔNG hỏi user)
 
@@ -205,9 +207,10 @@ Swarm — sơ đồ giao việc (dùng Agent tool, chạy song song ở tầng g
 
 ### 2C · Tầng 3 — Low-level: correctness + TRÙNG LẶP + leak/perf  *(bước 2–3 chỉ ở Vừa/Sâu — cần delta; Nhanh BỎ)*
 ```
-1. TRÙNG LẶP / THỪA — chạy ở MỌI độ sâu (dùng index, không cần đọc dòng):
-   - Mỗi hàm/util MỚI: query({search_query:"<chức năng>"}) + context({name:"<tên gần giống>"})
-     + cypher tìm hàm cùng shape → đã có hàm làm việc này chưa? Có → đề xuất tái dùng. `grep` chỉ xác nhận.
+1. TRÙNG LẶP / THỪA — MỌI độ sâu (dùng index, không đọc dòng):
+   - Mỗi hàm/util MỚI → BẮT ĐẦU bằng `query({search_query:"<chức năng>"})`: trả thẳng candidate cùng chức năng
+     (đã kiểm: tìm đúng ClientCompute/ServerCompute/computeLength). Có candidate → `context({name})` xác nhận trùng
+     → đề xuất TÁI DÙNG, KHÔNG viết mới. `cypher` chỉ khi cần lọc theo shape; `grep` chỉ để chốt. Rỗng → mới là mới.
 2. Correctness *(Vừa/Sâu)*: null/undefined deref, nhánh sai, off-by-one, race, missed await, state không reset.
    → đọc code qua `context(include_content)` rồi `git diff` hunk. *[Vừa: chỉ symbol MED+; Sâu: mọi symbol đụng.]*
 3. Leak/perf *(Vừa/Sâu)*: listener/timer/disposer dọn trong dispose()/teardown? throttle/debounce đúng?
@@ -350,7 +353,7 @@ KHÔNG dán cả báo cáo dài lên PR. Nội dung lấy từ synthesis-gate đ
 - [ ] chọn chế độ: Solo (mặc định) / Swarm (diff lớn → fan-out subagent + Lane 7 gate; nhắc READ-ONLY từng subagent)
 - [ ] TẦNG 1: doc(main) + clusters + processes → đối chiếu diff → verdict ĂN KHỚP/LỆCH; validate thiết kế nếu Q3
 - [ ] TẦNG 2: detect_changes(tách docs) · component theo pattern? · process cho flow bị đụng · dynamic context
-- [ ] TẦNG 3: TRÙNG LẶP (query/context/grep TRƯỚC) · correctness/leak/perf · impact upstream (đối chiếu, đừng tin =0)
+- [ ] TẦNG 3: TRÙNG LẶP (`query` TRƯỚC → `context` xác nhận) · correctness/leak/perf (chỉ Vừa/Sâu) · impact upstream (đối chiếu, đừng tin =0)
 - [ ] security taint nếu chọn & có PDG
 - [ ] SYNTHESIS-GATE: dedup · xử mâu thuẫn lane · self-reflection(bỏ nhiễu) · uncertainty→"Cần verify"
 - [ ] risk theo CODE (bỏ docs) · 3 VERDICT (Merge State/Branch Hygiene/Final) · ticket-compliance · finding gắn Blocks-merge · cảnh báo HIGH/CRITICAL/lệch-kiến-trúc · gợi ý tách PR/rebase

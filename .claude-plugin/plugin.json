@@ -1,6 +1,6 @@
 {
   "name": "gitnexus-pr-review",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "PR review 3 tầng với GitNexus: kiến trúc tổng thể → thiết kế module/data-flow → correctness + trùng lặp. Validate chính thiết kế, verdict merge-readiness, read-only. Báo cáo tiếng Việt kèm sơ đồ mermaid + bảng findings quét nhanh. Tự bật GitNexus MCP.",
   "author": {
     "name": "Nguyen Hong"
