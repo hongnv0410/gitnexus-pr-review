@@ -1,5 +1,6 @@
 {
   "name": "gitnexus-tools",
+  "description": "Bộ công cụ review code dựa trên GitNexus cho Claude Code.",
   "owner": { "name": "Nguyen Hong" },
   "plugins": [
     { "name": "gitnexus-pr-review", "source": "./" }
